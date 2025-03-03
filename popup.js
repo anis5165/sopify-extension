@@ -21,6 +21,7 @@ if (startStopBtn) {  // Check if startStopBtn exists
           chrome.runtime.sendMessage({ action: "startRecording" });
           startStopBtn.textContent = "Stop Recording";
         } else {
+          console.log("Sending stopRecording message");
           chrome.runtime.sendMessage({ action: "stopRecording" }, (response) => {
             if (chrome.runtime.lastError) {
               console.error("Error during stopRecording:", JSON.stringify(chrome.runtime.lastError));
