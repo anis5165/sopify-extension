@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Document Recorder",
+  "name": "Scribe-like Snapshot Recorder",
   "version": "1.0",
-  "description": "Records your document reading and editing process.",
+  "description": "Captures snapshots on specific events, stores them in chrome.storage (and optionally a server), and displays them in a popup.",
   "permissions": [
     "activeTab",
     "storage",
@@ -10,18 +10,18 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://docs.google.com/*" 
+    "<all_urls>"
   ],
   "background": {
     "service_worker": "background.js"
   },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Document Recorder"
+    "default_title": "Snapshot Recorder"
   },
   "content_scripts": [
     {
-      "matches": ["https://docs.google.com/*"],
+      "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_end"
     }

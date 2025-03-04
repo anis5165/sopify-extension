@@ -1,107 +1,136 @@
-let recording = false;
-let screenshots = [];
+// Global flag to control whether the extension is capturing snapshots.
+let extensionEnabled = true;
 
-console.log("Content script loaded.");
-
-// Listen for messages from the background script or popup
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    console.log("Content script received message:", request);
-
-    if (request.action === "startRecording") {
-        recording = true;
-        console.log("Content script: Recording started");
-    } else if (request.action === "stopRecording") {
-        recording = false;
-        console.log("Content script: Recording stopped");
-        sendResponse({ screenshots: screenshots });
-        screenshots = [];
-        return true;
-    } else if (request.action === "takeScreenshot") {
-        chrome.tabs.captureVisibleTab(null, {}, (imgData) => {
-            if (chrome.runtime.lastError) {
-                console.error("Error capturing tab:", chrome.runtime.lastError);
-                sendResponse({ error: chrome.runtime.lastError.message }); // Send error back
-            } else if (imgData) {
-                sendResponse({ imgData: imgData });
-            } else {
-                console.warn("captureVisibleTab returned no data");
-                sendResponse({ error: "captureVisibleTab returned no data" });
-            }
-
-            return true; // Ensure asynchronous response
-        });
-        return true;  //Important: for async response
-    } else {
-        console.warn("Content script received unknown message:", request);
-    }
-    return false; // Important: for async response
+// Listen for messages to toggle the extension state.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (msg.action === "setExtensionState") {
+    extensionEnabled = msg.enabled;
+    sendResponse({ status: "ok" });
+  }
 });
 
-function takeScreenshot(description = "Screenshot") {
-  if (!recording) return;
-
-  console.log("Attempting to take screenshot:", description); // DEBUGGING
-
-  chrome.runtime.sendMessage({ action: "takeScreenshot" }, (response) => {
-      if (chrome.runtime.lastError) {
-          console.error("Error during takeScreenshot message:", chrome.runtime.lastError);
-          return;  // Exit if there's an error
-      }
-      if (response && response.imgData) {
-          screenshots.push({ description: description, imgData: response.imgData });
-          console.log("Screenshot taken:", description);
-
-          chrome.storage.local.set({ "screenshots": screenshots }, () => {
-              console.log("Screenshots saved to local storage.");
-          });
-      } else {
-          console.warn("No image data received for screenshot:", description);
-      }
+// Helper function to store a screenshot in chrome.storage.
+function storeScreenshot(description, imgData) {
+  chrome.storage.local.get("screenshots", (result) => {
+    let screenshots = result.screenshots || [];
+    const screenshot = {
+      timestamp: Date.now(),
+      description: description,
+      imgData: imgData
+    };
+    screenshots.push(screenshot);
+    chrome.storage.local.set({ screenshots: screenshots }, () => {
+      console.log("Screenshot stored in chrome.storage.");
+    });
   });
 }
 
-// Listener function to capture changes
-function mutationCallback(mutationsList, observer) {
-    if (!recording) return;
-
-    for (const mutation of mutationsList) {
-        if (mutation.type === 'childList') {
-            console.log('A child node has been added or removed.');
-            takeScreenshot("Child node change");
-        } else if (mutation.type === 'attributes') {
-            console.log('The ' + mutation.attributeName + ' attribute was modified.');
-            takeScreenshot("Attribute change");
-        } else if (mutation.type === 'characterData') {
-            console.log('The character data of a node has been modified.');
-            takeScreenshot("Character data change");
-        }
+// Function to capture a full-viewport snapshot.
+function captureSnapshot(description) {
+  chrome.runtime.sendMessage({ action: "takeSnapshot" }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error("Error taking snapshot:", chrome.runtime.lastError);
+      return;
     }
+    if (response && response.imgData) {
+      console.log("Snapshot captured for:", description);
+      storeScreenshot(description, response.imgData);
+    } else {
+      console.warn("No image data received for snapshot.");
+    }
+  });
 }
 
-// --- Event Listeners and Observers ---
-
-document.addEventListener("click", (event) => {
-    if (recording) {
-        console.log("Click event detected");  //DEBUGGING
-        takeScreenshot("Click on paragraph");
+// Function to capture a cropped snapshot based on a specified region.
+function captureCroppedSnapshot(cropRect, description) {
+  chrome.runtime.sendMessage({ action: "takeSnapshot" }, (response) => {
+    if (chrome.runtime.lastError) {
+      console.error("Error taking snapshot:", chrome.runtime.lastError);
+      return;
     }
+    if (response && response.imgData) {
+      const img = new Image();
+      img.onload = function() {
+        // Use the device pixel ratio to adjust coordinates if needed.
+        const dpr = window.devicePixelRatio || 1;
+        const sx = Math.max(cropRect.x * dpr, 0);
+        const sy = Math.max(cropRect.y * dpr, 0);
+        const sWidth = cropRect.width * dpr;
+        const sHeight = cropRect.height * dpr;
+        
+        // Create a canvas to draw the cropped image.
+        const canvas = document.createElement("canvas");
+        canvas.width = sWidth;
+        canvas.height = sHeight;
+        const ctx = canvas.getContext("2d");
+        // Draw the specified region from the full screenshot.
+        ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, sWidth, sHeight);
+        const croppedData = canvas.toDataURL("image/png");
+        storeScreenshot(description, croppedData);
+      };
+      img.src = response.imgData;
+    }
+  });
+}
+
+// Function to compute the union of the selection's rectangles, add margin, and capture the cropped region.
+function highlightSelectionAndCapture() {
+  const selection = window.getSelection();
+  if (selection.rangeCount === 0) return;
+  
+  const range = selection.getRangeAt(0);
+  const rects = range.getClientRects();
+  
+  // Compute the union of all client rects.
+  let unionRect = { left: Infinity, top: Infinity, right: -Infinity, bottom: -Infinity };
+  for (let rect of rects) {
+    unionRect.left = Math.min(unionRect.left, rect.left);
+    unionRect.top = Math.min(unionRect.top, rect.top);
+    unionRect.right = Math.max(unionRect.right, rect.right);
+    unionRect.bottom = Math.max(unionRect.bottom, rect.bottom);
+  }
+  
+  // Define a margin (in CSS pixels) around the selected area.
+  const margin = 20;
+  let cropX = unionRect.left - margin;
+  let cropY = unionRect.top - margin;
+  let cropWidth = (unionRect.right - unionRect.left) + 2 * margin;
+  let cropHeight = (unionRect.bottom - unionRect.top) + 2 * margin;
+  
+  // OPTIONAL: Create temporary overlays to highlight the selected area.
+  let overlays = [];
+  for (let rect of rects) {
+    let overlay = document.createElement("div");
+    // For overlays, adjust with window.scrollX/Y since they are added to the document.
+    overlay.style.position = "absolute";
+    overlay.style.left = `${rect.left + window.scrollX}px`;
+    overlay.style.top = `${rect.top + window.scrollY}px`;
+    overlay.style.width = `${rect.width}px`;
+    overlay.style.height = `${rect.height}px`;
+    overlay.style.backgroundColor = "rgba(255, 255, 0, 0.4)"; // semi-transparent yellow
+    overlay.style.pointerEvents = "none";
+    overlay.style.zIndex = "9999";
+    document.body.appendChild(overlay);
+    overlays.push(overlay);
+  }
+  
+  // Wait briefly for overlays (if any) to render before capturing.
+  setTimeout(() => {
+    captureCroppedSnapshot({ x: cropX, y: cropY, width: cropWidth, height: cropHeight }, "Text selection cropped snapshot");
+    overlays.forEach(overlay => overlay.remove());
+  }, 100); // 100ms delay; adjust if needed
+}
+
+// Capture a full snapshot on every click.
+document.addEventListener("click", () => {
+  if (extensionEnabled) {
+    captureSnapshot("Click snapshot");
+  }
 });
 
-document.addEventListener("mouseup", (event) => {
-    if (recording) {
-        if (window.getSelection().toString().length > 0) {
-            console.log("Text selected"); //DEBUGGING
-            takeScreenshot("Text selected");
-        }
-    }
-});
-
-// Observe the document for changes
-const observer = new MutationObserver(mutationCallback);
-
-observer.observe(document, {
-    attributes: true,
-    childList: true,
-    subtree: true,
-    characterData: true // Track text changes
+// Capture a cropped snapshot when text is selected.
+document.addEventListener("mouseup", () => {
+  if (extensionEnabled && window.getSelection().toString().trim().length > 0) {
+    highlightSelectionAndCapture();
+  }
 });

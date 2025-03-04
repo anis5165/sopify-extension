@@ -1,53 +1,81 @@
-let recording = false;
-const startStopBtn = document.getElementById("startStopBtn");
-const screenshotList = document.getElementById("screenshotList");
-
-if (startStopBtn) {  // Check if startStopBtn exists
-  startStopBtn.addEventListener("click", () => {
-    console.log("Button clicked!"); // DEBUGGING: Check if button is clicked
-
-    console.log("Before toggle: recording =", recording); // DEBUGGING: Check recording value before toggle
-    recording = !recording;
-    console.log("After toggle: recording =", recording);  // DEBUGGING: Check recording value after toggle
-
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      console.log("chrome.tabs.query tabs:", tabs); // DEBUGGING: Check the tabs array
-
-      if (tabs && tabs.length > 0) {
-        const activeTab = tabs[0];
-
-        if (recording) {
-          console.log("Sending startRecording message"); // DEBUGGING: Check if message is sent
-          chrome.runtime.sendMessage({ action: "startRecording" });
-          startStopBtn.textContent = "Stop Recording";
-        } else {
-          console.log("Sending stopRecording message");
-          chrome.runtime.sendMessage({ action: "stopRecording" }, (response) => {
-            if (chrome.runtime.lastError) {
-              console.error("Error during stopRecording:", JSON.stringify(chrome.runtime.lastError));
-            } else if (response && response.screenshots) {
-              displayScreenshots(response.screenshots);
-            }
-          });
-          startStopBtn.textContent = "Start Recording";
-        }
-      } else {
-        console.error("No active tabs found!"); // DEBUGGING: Check if tabs are found
+document.addEventListener("DOMContentLoaded", () => {
+    const screenshotList = document.getElementById("screenshotList");
+    const modal = document.getElementById("modal");
+    const modalImg = document.getElementById("modalImg");
+    const closeModal = document.querySelector(".close");
+    const startBtn = document.getElementById("startExtension");
+    const stopBtn = document.getElementById("stopExtension");
+  
+    // Function to render screenshots in the popup.
+    function displayScreenshots(screenshots) {
+      screenshotList.innerHTML = "";
+      screenshots.forEach((screenshot) => {
+        const img = document.createElement("img");
+        img.src = screenshot.imgData;
+        img.alt = screenshot.description;
+        img.title = new Date(screenshot.timestamp).toLocaleString();
+        img.addEventListener("click", () => {
+          modal.style.display = "block";
+          modalImg.src = screenshot.imgData;
+        });
+        screenshotList.appendChild(img);
+      });
+    }
+  
+    // Load screenshots from chrome.storage when the popup opens.
+    chrome.storage.local.get("screenshots", (result) => {
+      if (result.screenshots) {
+        displayScreenshots(result.screenshots);
       }
     });
-  });
-} else {
-    console.error("startStopBtn element not found in popup.html");
-}
-
-function displayScreenshots(screenshots) {
-    screenshotList.innerHTML = "";  // Clear previous screenshots
-    screenshots.forEach(shot => {
-        const img = document.createElement("img");
-        img.src = shot.imgData;
-        img.alt = shot.description;
-        img.style.maxWidth = "180px";
-        img.style.maxHeight = "100px";
-        screenshotList.appendChild(img);
+  
+    // Update screenshots in real time when storage changes.
+    chrome.storage.onChanged.addListener((changes, areaName) => {
+      if (areaName === "local" && changes.screenshots) {
+        displayScreenshots(changes.screenshots.newValue);
+      }
     });
-}
+  
+    // Close the modal when the close button is clicked.
+    closeModal.addEventListener("click", () => {
+      modal.style.display = "none";
+    });
+  
+    // Also close the modal if clicking outside the image.
+    window.addEventListener("click", (event) => {
+      if (event.target === modal) {
+        modal.style.display = "none";
+      }
+    });
+  
+    // Function to send a message to the active tab's content script to set extension state.
+    function setExtensionState(enabled) {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        if (tabs[0]) {
+          chrome.tabs.sendMessage(
+            tabs[0].id,
+            { action: "setExtensionState", enabled: enabled },
+            (response) => {
+              console.log("Extension state set to", enabled, response);
+            }
+          );
+        }
+      });
+    }
+  
+    // Start button event handler.
+    startBtn.addEventListener("click", () => {
+      setExtensionState(true);
+    });
+  
+    // Stop button event handler.
+    stopBtn.addEventListener("click", () => {
+      setExtensionState(false);
+      // Clear screenshots from storage.
+      chrome.storage.local.remove("screenshots", () => {
+        console.log("Screenshots cleared from storage.");
+        displayScreenshots([]);
+      });
+    });
+  });
+  
