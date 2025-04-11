@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Snapshot Recorder</title>
+    <style>
+        body {
+            width: 100%;
+            margin: 0;
+            padding: 16px;
+            box-sizing: border-box;
+            font-family: Arial, sans-serif;
+        }
+        .screenshot-container {
+            margin-bottom: 16px;
+            border: 1px solid #ccc;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .screenshot-container img {
+            width: 100%;
+            height: auto;
+            margin-bottom: 8px;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 12px;
+        }
+        .controls {
+            position: sticky;
+            top: 0;
+            background: white;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 16px;
+        }
+        button {
+            padding: 8px 16px;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <button id="startBtn">Start Recording</button>
+        <button id="stopBtn">Stop Recording</button>
+        <button id="clearBtn">Clear All</button>
+    </div>
+    <div id="screenshots"></div>
+    <script src="sidepanel.js"></script>
+</body>
+</html>

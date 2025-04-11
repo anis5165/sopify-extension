@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Scribe-like Snapshot Recorder",
+  "name": "Shopify Snapshots",
   "version": "1.0",
-  "description": "Captures snapshots on specific events, stores them in chrome.storage (and optionally a server), and displays them in a popup.",
+  "description": "Captures snapshots on specific events",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
-    "tabs"
+    "tabs",
+    "sidePanel"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -15,15 +16,14 @@
   "background": {
     "service_worker": "background.js"
   },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "Snapshot Recorder"
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "run_at": "document_end"
+      "js": ["content.js"]
     }
-  ]
+  ],
+  "action": {}
 }

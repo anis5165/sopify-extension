@@ -1,12 +1,20 @@
 // Global flag to control whether the extension is capturing snapshots.
 let extensionEnabled = true;
 
+// Flag to control whether the extension is recording screenshots.
+let isRecording = false;
+
 // Listen for messages to toggle the extension state.
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.action === "setExtensionState") {
     extensionEnabled = msg.enabled;
     sendResponse({ status: "ok" });
   }
+  if (msg.action === "recordingStateChanged") {
+    isRecording = msg.enabled;
+    sendResponse({ success: true });
+  }
+  return true;
 });
 
 // Helper function to store a screenshot in chrome.storage.
@@ -157,3 +165,17 @@ function monitorTyping() {
 
 // Initialize typing monitor
 monitorTyping();
+
+// Function to capture and send screenshot to background script.
+function captureAndSendScreenshot() {
+  if (!isRecording) return;
+
+  chrome.runtime.sendMessage({
+    action: "captureScreenshot",
+    url: window.location.href
+  });
+}
+
+// Add event listeners for user interactions.
+document.addEventListener('click', captureAndSendScreenshot);
+document.addEventListener('input', captureAndSendScreenshot);
